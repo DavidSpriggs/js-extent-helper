@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <title>JS Extent Helper</title>
+        <link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dojo/resources/dojo.css"/>
+        <link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dijit/themes/claro/claro.css"/>
+        <style type="text/css">
+            html, body {
+                height: 100%;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+        </style>
+        <script type="text/javascript">
+            var djConfig = {
+                parseOnLoad: true
+            };
+        </script>
+        <script type="text/javascript" src="http://serverapi.arcgisonline.com/jsapi/arcgis/?v=2.5">
+        </script>
+        <script type="text/javascript">
+            dojo.require("dijit.layout.BorderContainer");
+            dojo.require("dijit.layout.ContentPane");
+            dojo.require("dijit.Dialog");
+            dojo.require("dijit.form.CheckBox");
+            dojo.require("dijit.form.Form");
+            dojo.require("esri.map");
+            
+            var map, drawToolbar, resizeTimer, infoTemplate;
+            
+            function init(){
+                createMap('webmercator');
+            }
+            
+            function createToolbar(map){
+                drawToolbar = new esri.toolbars.Draw(map);
+                dojo.connect(drawToolbar, "onDrawEnd", addToMap);
+            }
+            
+            function addToMap(geometry){
+                var symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_DASHDOT, new dojo.Color([255, 0, 0]), 2), new dojo.Color([255, 255, 0, 0.25]));
+                var graphic = new esri.Graphic(geometry, symbol, {
+                    extentjson: dojo.toJson(geometry.toJson()),
+                    extent: geometry.xmin + "," + geometry.ymin + "," + geometry.xmax + "," + geometry.ymax
+                }, infoTemplate);
+                map.graphics.add(graphic);
+                drawToolbar.deactivate();
+                map.setMapCursor("default");
+                dojo.byId("extentOutput").innerHTML = "Graphic extent json: " + dojo.toJson(geometry.toJson()) + "<br/>Graphic extent compact: " + geometry.xmin + "," + geometry.ymin + "," + geometry.xmax + "," + geometry.ymax;
+                dijit.byId("extentInfo").show();
+            }
+            
+            function createExtentGraphic(extentString){
+                extentValues = extentString.split(",");
+                if (extentValues.length === 4) {
+                    var symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_DASHDOT, new dojo.Color([0, 0, 255]), 2), new dojo.Color([0, 0, 255, 0.25]));
+                    var geometry = new esri.geometry.Extent(parseFloat(extentValues[0]), parseFloat(extentValues[1]), parseFloat(extentValues[2]), parseFloat(extentValues[3]), map.spatialReference);
+                    var graphic = new esri.Graphic(geometry, symbol, {
+                        extentjson: dojo.toJson(geometry.toJson()),
+                        extent: extentValues[0] + "," + extentValues[1] + "," + extentValues[2] + "," + extentValues[3]
+                    }, infoTemplate);
+                    map.graphics.add(graphic);
+                    map.setExtent(geometry, true);
+                }
+                dijit.byId('createExtent').hide();
+                dojo.byId('extentCoords').value = "";
+            }
+            
+            function mapExtent(){
+                dojo.byId("extentOutput").innerHTML = "Map extent json: " + dojo.toJson(map.extent.toJson()) + "<br/>Map extent compact: " + map.extent.xmin + "," + map.extent.ymin + "," + map.extent.xmax + "," + map.extent.ymax;
+                dijit.byId("extentInfo").show();
+            }
+            
+            function changeProjection(){
+                var switchTo = dijit.byId('projectionForm').getValues();
+                map.destroy();
+                createMap(switchTo.prj);
+            }
+            
+            function createMap(prj){
+                switch (prj) {
+                    case 'wgs84':
+                        map = new esri.Map("map");
+                        var basemap = new esri.layers.ArcGISTiledMapServiceLayer("http://services.arcgisonline.com/ArcGIS/rest/services/ESRI_StreetMap_World_2D/MapServer");
+                        map.addLayer(basemap);
+                        connectMap();
+                        break;
+                    case 'webmercator':
+                        map = new esri.Map("map");
+                        var basemap = new esri.layers.ArcGISTiledMapServiceLayer("http://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer");
+                        map.addLayer(basemap);
+                        connectMap();
+                        break;
+                }
+            }
+            
+            function connectMap(){
+                dojo.connect(map, "onLoad", createToolbar);
+                dojo.connect(map, 'onLoad', function(theMap){
+                    dojo.connect(dijit.byId('map'), 'resize', function(){
+                        clearTimeout(resizeTimer);
+                        resizeTimer = setTimeout(function(){
+                            map.resize();
+                            map.reposition();
+                        }, 500);
+                    });
+                });
+                infoTemplate = new esri.InfoTemplate("Extent", "JSON:${extentjson}<br/><BR/>Compact:${extent}");
+                map.infoWindow.resize(600, 130);
+            }
+            
+            dojo.addOnLoad(init);
+        </script>
+    </head>
+    <body class="claro">
+        <div dojotype="dijit.layout.BorderContainer" design="headline" gutters="false" style="width: 100%; height: 100%; margin: 0; padding: 0;">
+            <div id="map" dojotype="dijit.layout.ContentPane" region="center" style="overflow:hidden;margin: 0; padding: 0;">
+                <div style="position:absolute; right:10px; top:10px; z-Index:999;">
+                    <button dojoType="dijit.form.Button" onClick="drawToolbar.activate(esri.toolbars.Draw.EXTENT);map.setMapCursor('crosshair');">
+                        Draw Extent
+                    </button>
+                    <button dojoType="dijit.form.Button" onClick="mapExtent();">
+                        Get Map Extent
+                    </button>
+                    <button dojoType="dijit.form.Button" onClick="dijit.byId('createExtent').show();">
+                        Create Extent
+                    </button>
+                    <button dojoType="dijit.form.Button" onClick="map.graphics.clear();map.infoWindow.hide();">
+                        Clear Map
+                    </button>
+                    <div id="toolsMenu" dojoType="dijit.form.DropDownButton">
+                        <span>Change Projection</span>
+                        <div dojoType="dijit.TooltipDialog">
+                            <div class="selectionToolsOutterF">
+                                <div dojoType="dijit.form.Form" id="projectionForm">
+                                    <table>
+                                        <tr>
+                                            <td>
+                                                <input dojoType="dijit.form.RadioButton" checked="true" id="webmercator" value="webmercator" name="prj" onchange="changeProjection();"/>
+                                            </td>
+                                            <td>
+                                                <label for="webmercator">
+                                                    Web Mercator
+                                                </label>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>
+                                                <input dojoType="dijit.form.RadioButton" id="wgs84" value="wgs84" name="prj" onchange="changeProjection();"/>
+                                            </td>
+                                            <td>
+                                                <label for="wgs84">
+                                                    WGS84
+                                                </label>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div dojoType="dijit.Dialog" title="Extent Info" id="extentInfo">
+            <div id="extentOutput">
+            </div>
+            <center>
+                <button dojoType="dijit.form.Button" onClick="dijit.byId('extentInfo').hide();">
+                    <div>
+                        OK
+                    </div>
+                </button>
+            </center>
+        </div>
+        <div dojoType="dijit.Dialog" title="Create Extent" id="createExtent">
+            <input type="text" id="extentCoords" style="width:500px;">
+            <br/>
+            Example: xmin,ymin,xmax,ymax (note: coordinates must be in current map projection)
+            <br/>
+            <center>
+                <button dojoType="dijit.form.Button" onClick="createExtentGraphic(dojo.byId('extentCoords').value);">
+                    Create it
+                </button>
+            </center>
+        </div>
+    </body>
+</html>
